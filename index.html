@@ -2,108 +2,126 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<title>OCR Inventario PRO</title>
+<title>OCR Inventario Selección Manual</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
 <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
 <style>
-body{font-family:Arial;background:#f3f4f6;padding:14px}
+body{font-family:Arial;background:#f3f4f6;padding:12px}
 h2{text-align:center}
-button{width:100%;padding:12px;margin:6px 0;font-size:16px;border:none;border-radius:6px}
-.primary{background:#2563eb;color:white}
-.secondary{background:#16a34a;color:white}
-.export{background:#111827;color:white}
+button{width:100%;padding:10px;margin:6px 0;font-size:16px}
+canvas{border:2px solid #2563eb;width:100%;touch-action:none}
 table{width:100%;border-collapse:collapse;margin-top:10px}
-th,td{border:1px solid #ccc;padding:6px;font-size:13px;vertical-align:top}
+th,td{border:1px solid #ccc;padding:6px;font-size:13px}
 th{background:#e5e7eb}
-#status{text-align:center;font-size:14px;margin:8px}
+#status{text-align:center;margin:6px}
 </style>
 </head>
 
 <body>
 
-<h2>📦 OCR Inventario PRO</h2>
+<h2>📦 OCR Inventario – Selección Manual</h2>
 
-<button class="primary" onclick="camara.click()">📷 Tomar foto</button>
-<button class="secondary" onclick="galeria.click()">🖼️ Cargar imagen</button>
+<input type="file" accept="image/*" onchange="cargarImagen(event)">
 
-<input id="camara" type="file" accept="image/*" capture="environment" hidden onchange="procesarImagen(this)">
-<input id="galeria" type="file" accept="image/*" hidden onchange="procesarImagen(this)">
+<div id="status">Cargue una imagen</div>
 
-<div id="status">Esperando imagen…</div>
+<canvas id="canvas"></canvas>
 
-<button class="export" onclick="exportarExcel()">⬇️ Descargar Excel</button>
+<button onclick="procesarSeleccion()">🔍 Leer área seleccionada</button>
+<button onclick="exportarExcel()">⬇️ Descargar Excel</button>
 
 <table id="tabla">
 <thead>
 <tr>
-<th>#</th>
-<th>Código</th>
-<th>Fecha</th>
-<th>Lote</th>
-<th>Cantidad</th>
-<th>Descripción</th>
+<th>#</th><th>Texto OCR</th>
 </tr>
 </thead>
 <tbody></tbody>
 </table>
 
 <script>
+let canvas=document.getElementById("canvas");
+let ctx=canvas.getContext("2d");
+let img=new Image();
+let startX,startY,endX,endY;
+let seleccionando=false;
 let contador=1;
 
-async function procesarImagen(input){
-  const img=input.files[0];
-  if(!img) return;
+function cargarImagen(e){
+  const file=e.target.files[0];
+  if(!file) return;
 
-  status.innerText="🔍 Procesando OCR…";
+  img.onload=()=>{
+    canvas.width=img.width;
+    canvas.height=img.height;
+    ctx.drawImage(img,0,0);
+  };
+  img.src=URL.createObjectURL(file);
+}
 
-  const {data:{text}} = await Tesseract.recognize(
-    img,'spa+eng',
-    {logger:m=>{
-      if(m.status==="recognizing text")
-        status.innerText="OCR "+Math.round(m.progress*100)+"%";
-    }}
-  );
+canvas.addEventListener("pointerdown",e=>{
+  startX=e.offsetX;
+  startY=e.offsetY;
+  seleccionando=true;
+});
 
-  if(text.trim()) agregarFila(text);
-  status.innerText="✅ Procesado";
-  input.value="";
+canvas.addEventListener("pointermove",e=>{
+  if(!seleccionando) return;
+  ctx.drawImage(img,0,0);
+  ctx.strokeStyle="red";
+  ctx.lineWidth=2;
+  ctx.strokeRect(startX,startY,e.offsetX-startX,e.offsetY-startY);
+});
+
+canvas.addEventListener("pointerup",e=>{
+  endX=e.offsetX;
+  endY=e.offsetY;
+  seleccionando=false;
+});
+
+async function procesarSeleccion(){
+  if(startX==null||endX==null){
+    alert("Seleccione un área primero");
+    return;
+  }
+
+  const w=Math.abs(endX-startX);
+  const h=Math.abs(endY-startY);
+  const x=Math.min(startX,endX);
+  const y=Math.min(startY,endY);
+
+  const temp=document.createElement("canvas");
+  temp.width=w;
+  temp.height=h;
+  temp.getContext("2d").drawImage(canvas,x,y,w,h,0,0,w,h);
+
+  status.innerText="OCR en área seleccionada…";
+
+  const {data:{text}}=await Tesseract.recognize(temp,'spa+eng');
+
+  if(text.trim()) agregarFila(text.trim());
+  status.innerText="Listo";
 }
 
 function agregarFila(texto){
-  const lineas=texto.split(/\n+/).map(l=>l.trim()).filter(Boolean);
-
-  let codigo="", fecha="", lote="", cantidad="", descripcion=[];
-
-  lineas.forEach(l=>{
-    if(!codigo && /[A-Z0-9\-]{3,}/i.test(l)) codigo=l.match(/[A-Z0-9\-]{3,}/i)[0];
-    else if(!fecha && /\d{2}[\/\-]\d{2}[\/\-]\d{4}/.test(l)) fecha=l.match(/\d{2}[\/\-]\d{2}[\/\-]\d{4}/)[0];
-    else if(!lote && /LOT|LOTE/i.test(l)) lote=l.replace(/[^0-9A-Z\-]/gi,"");
-    else if(!cantidad && /\b\d+\b/.test(l)) cantidad=l.match(/\b\d+\b/)[0];
-    else descripcion.push(l);
-  });
-
   const tr=tabla.querySelector("tbody").insertRow();
   tr.insertCell(0).innerText=contador++;
-  tr.insertCell(1).innerText=codigo;
-  tr.insertCell(2).innerText=fecha;
-  tr.insertCell(3).innerText=lote;
-  tr.insertCell(4).innerText=cantidad;
-  tr.insertCell(5).innerText=descripcion.join(" ");
+  tr.insertCell(1).innerText=texto;
 }
 
 function exportarExcel(){
-  const filas=[["#","Código","Fecha","Lote","Cantidad","Descripción"]];
+  const filas=[["#","Texto OCR"]];
   document.querySelectorAll("#tabla tbody tr").forEach(tr=>{
-    filas.push([...tr.cells].map(td=>td.innerText));
+    filas.push([tr.cells[0].innerText,tr.cells[1].innerText]);
   });
 
   const hoja=XLSX.utils.aoa_to_sheet(filas);
   const libro=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(libro,hoja,"Inventario");
-  XLSX.writeFile(libro,"inventario_pro.xlsx");
+  XLSX.utils.book_append_sheet(libro,hoja,"Datos");
+  XLSX.writeFile(libro,"inventario_area.xlsx");
 }
 </script>
 
