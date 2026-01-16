@@ -1,0 +1,70 @@
+<!DOCTYPE html>
+<html lang="es">
+<head>
+<meta charset="UTF-8">
+<title>OCR Inventario</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+<script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+
+<style>
+body{font-family:Arial;background:#f3f4f6;padding:12px}
+h2{text-align:center}
+button,input{padding:10px;width:100%;margin:6px 0;font-size:16px}
+table{width:100%;border-collapse:collapse;margin-top:10px}
+th,td{border:1px solid #ccc;padding:6px;font-size:14px}
+th{background:#e5e7eb}
+</style>
+</head>
+
+<body>
+
+<h2>📦 OCR Inventario</h2>
+
+<input type="file" accept="image/*" capture="environment" onchange="leerImagen(this)">
+<button onclick="exportar()">⬇️ Descargar Excel</button>
+
+<table id="tabla">
+<thead>
+<tr><th>#</th><th>Texto Detectado</th></tr>
+</thead>
+<tbody></tbody>
+</table>
+
+<script>
+let contador=1;
+
+function leerImagen(input){
+  const img=input.files[0];
+  if(!img) return;
+
+  Tesseract.recognize(img,'spa')
+    .then(({data:{text}})=>{
+      if(text.trim()) agregarFila(text.trim());
+      input.value="";
+    });
+}
+
+function agregarFila(texto){
+  const tbody=document.querySelector("#tabla tbody");
+  const fila=tbody.insertRow();
+  fila.insertCell(0).innerText=contador++;
+  fila.insertCell(1).innerText=texto;
+}
+
+function exportar(){
+  const filas=[["#","Texto Detectado"]];
+  document.querySelectorAll("#tabla tbody tr").forEach(tr=>{
+    filas.push([tr.cells[0].innerText,tr.cells[1].innerText]);
+  });
+
+  const hoja=XLSX.utils.aoa_to_sheet(filas);
+  const libro=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(libro,hoja,"Inventario");
+  XLSX.writeFile(libro,"inventario_ocr.xlsx");
+}
+</script>
+
+</body>
+</html>
