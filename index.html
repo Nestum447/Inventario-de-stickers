@@ -5,16 +5,19 @@
 <title>OCR Inventario</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
+<!-- OCR -->
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
+<!-- Excel -->
 <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
 
 <style>
-body{font-family:Arial;background:#f3f4f6;padding:12px}
+body{font-family:Arial;background:#f3f4f6;padding:14px}
 h2{text-align:center}
 button,input{padding:10px;width:100%;margin:6px 0;font-size:16px}
 table{width:100%;border-collapse:collapse;margin-top:10px}
-th,td{border:1px solid #ccc;padding:6px;font-size:14px}
+th,td{border:1px solid #ccc;padding:6px;font-size:14px;vertical-align:top}
 th{background:#e5e7eb}
+#status{font-size:14px;color:#1f2937;text-align:center}
 </style>
 </head>
 
@@ -22,47 +25,91 @@ th{background:#e5e7eb}
 
 <h2>📦 OCR Inventario</h2>
 
-<input type="file" accept="image/*" capture="environment" onchange="leerImagen(this)">
+<!-- Cargar imagen o tomar foto -->
+<input 
+  type="file" 
+  accept="image/*" 
+  capture="environment" 
+  onchange="procesarImagen(this)"
+>
+
+<div id="status">Esperando imagen…</div>
+
 <button onclick="exportar()">⬇️ Descargar Excel</button>
 
 <table id="tabla">
 <thead>
-<tr><th>#</th><th>Texto Detectado</th></tr>
+<tr>
+  <th>#</th>
+  <th>Texto detectado</th>
+</tr>
 </thead>
 <tbody></tbody>
 </table>
 
 <script>
-let contador=1;
+let contador = 1;
 
-function leerImagen(input){
-  const img=input.files[0];
-  if(!img) return;
+async function procesarImagen(input){
+  const archivo = input.files[0];
+  if(!archivo) return;
 
-  Tesseract.recognize(img,'spa')
-    .then(({data:{text}})=>{
-      if(text.trim()) agregarFila(text.trim());
-      input.value="";
-    });
+  document.getElementById("status").innerText = "🔍 Procesando imagen…";
+
+  try{
+    const { data:{ text } } = await Tesseract.recognize(
+      archivo,
+      'spa+eng',
+      {
+        logger: m => {
+          if(m.status === "recognizing text"){
+            document.getElementById("status").innerText =
+              "🔍 OCR " + Math.round(m.progress * 100) + "%";
+          }
+        }
+      }
+    );
+
+    if(text.trim()){
+      agregarFila(text.trim());
+      document.getElementById("status").innerText = "✅ Texto detectado";
+    }else{
+      document.getElementById("status").innerText = "⚠️ No se detectó texto";
+    }
+
+  }catch(err){
+    console.error(err);
+    document.getElementById("status").innerText = "❌ Error al procesar imagen";
+  }
+
+  input.value = "";
 }
 
 function agregarFila(texto){
-  const tbody=document.querySelector("#tabla tbody");
-  const fila=tbody.insertRow();
-  fila.insertCell(0).innerText=contador++;
-  fila.insertCell(1).innerText=texto;
+  const tbody = document.querySelector("#tabla tbody");
+  const fila = tbody.insertRow();
+  fila.insertCell(0).innerText = contador++;
+  fila.insertCell(1).innerText = texto;
 }
 
 function exportar(){
-  const filas=[["#","Texto Detectado"]];
+  const filas = [["#", "Texto detectado"]];
   document.querySelectorAll("#tabla tbody tr").forEach(tr=>{
-    filas.push([tr.cells[0].innerText,tr.cells[1].innerText]);
+    filas.push([
+      tr.cells[0].innerText,
+      tr.cells[1).innerText
+    ]);
   });
 
-  const hoja=XLSX.utils.aoa_to_sheet(filas);
-  const libro=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(libro,hoja,"Inventario");
-  XLSX.writeFile(libro,"inventario_ocr.xlsx");
+  if(filas.length === 1){
+    alert("No hay datos para exportar");
+    return;
+  }
+
+  const hoja = XLSX.utils.aoa_to_sheet(filas);
+  const libro = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(libro, hoja, "Inventario");
+  XLSX.writeFile(libro, "inventario_ocr.xlsx");
 }
 </script>
 
