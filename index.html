@@ -6,7 +6,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/npm/xlsx/dist/xlsx.full.min.js"></script>
 
 <style>
 body{font-family:Arial;background:#f3f4f6;padding:14px}
@@ -20,11 +20,15 @@ th,td{border:1px solid #ccc;padding:6px;font-size:13px}
 th{background:#e5e7eb}
 #status{text-align:center;font-size:14px;margin:8px}
 
+#canvasWrap{
+  overflow:hidden;
+  touch-action:none;
+}
+
 canvas{
   width:100%;
   border:2px dashed #999;
-  margin-top:10px;
-  touch-action:none;
+  transform-origin:0 0;
 }
 </style>
 </head>
@@ -39,9 +43,11 @@ canvas{
 <input id="camara" type="file" accept="image/*" capture="environment" hidden onchange="cargarImagen(this)">
 <input id="galeria" type="file" accept="image/*" hidden onchange="cargarImagen(this)">
 
-<div id="status">Selecciona un área del texto</div>
+<div id="status">Dibuja o mueve el cuadro</div>
 
-<canvas id="canvas"></canvas>
+<div id="canvasWrap">
+  <canvas id="canvas"></canvas>
+</div>
 
 <button class="export" onclick="procesarOCR()">🔍 Extraer texto</button>
 <button class="export" onclick="exportarExcel()">⬇️ Descargar Excel</button>
@@ -57,17 +63,19 @@ canvas{
 </table>
 
 <script>
-let canvas = document.getElementById("canvas");
-let ctx = canvas.getContext("2d");
-let img = new Image();
+let canvas=document.getElementById("canvas");
+let ctx=canvas.getContext("2d");
+let img=new Image();
 
-let startX=0, startY=0, endX=0, endY=0;
-let seleccionando=false;
+let scale=1;
+let startX=0,startY=0,endX=0,endY=0;
+let dragging=false, moving=false;
+let lastDist=0;
 let contador=1;
 
-/* =========================
-   CARGAR Y ESCALAR IMAGEN
-========================= */
+/* =====================
+   CARGA DE IMAGEN
+===================== */
 function cargarImagen(input){
   const file=input.files[0];
   if(!file) return;
@@ -76,72 +84,97 @@ function cargarImagen(input){
   reader.onload=e=>{
     img.onload=()=>{
       const max=1200;
-      const scale=Math.min(max/img.width, max/img.height, 1);
-
-      canvas.width=img.width*scale;
-      canvas.height=img.height*scale;
-
-      ctx.drawImage(img,0,0,canvas.width,canvas.height);
-    };
+      const s=Math.min(max/img.width,max/img.height,1);
+      canvas.width=img.width*s;
+      canvas.height=img.height*s;
+      draw();
+    }
     img.src=e.target.result;
-  };
+  }
   reader.readAsDataURL(file);
 }
 
-/* =========================
-   POSICIÓN REAL DEL DEDO
-========================= */
-function getPos(e){
-  const rect = canvas.getBoundingClientRect();
-  const scaleX = canvas.width / rect.width;
-  const scaleY = canvas.height / rect.height;
+/* =====================
+   DIBUJO GENERAL
+===================== */
+function draw(){
+  ctx.setTransform(scale,0,0,scale,0,0);
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.drawImage(img,0,0,canvas.width,canvas.height);
 
+  if(endX){
+    ctx.strokeStyle="red";
+    ctx.lineWidth=2/scale;
+    ctx.strokeRect(startX,startY,endX-startX,endY-startY);
+  }
+}
+
+/* =====================
+   POSICIÓN REAL
+===================== */
+function getPos(e){
+  const rect=canvas.getBoundingClientRect();
   return {
-    x: (e.clientX - rect.left) * scaleX,
-    y: (e.clientY - rect.top) * scaleY
+    x:(e.clientX-rect.left)/scale,
+    y:(e.clientY-rect.top)/scale
   };
 }
 
-/* =========================
-   SELECCIÓN DE ÁREA
-========================= */
+/* =====================
+   INTERACCIÓN
+===================== */
 canvas.addEventListener("pointerdown",e=>{
   const p=getPos(e);
-  seleccionando=true;
-  startX=p.x;
-  startY=p.y;
+
+  if(p.x>startX && p.x<endX && p.y>startY && p.y<endY){
+    moving=true;
+  }else{
+    dragging=true;
+    startX=p.x;
+    startY=p.y;
+    endX=p.x;
+    endY=p.y;
+  }
 });
 
 canvas.addEventListener("pointermove",e=>{
-  if(!seleccionando) return;
-
+  if(!dragging && !moving) return;
   const p=getPos(e);
-  endX=p.x;
-  endY=p.y;
 
-  ctx.drawImage(img,0,0,canvas.width,canvas.height);
-  ctx.strokeStyle="red";
-  ctx.lineWidth=2;
-  ctx.strokeRect(
-    startX,
-    startY,
-    endX-startX,
-    endY-startY
-  );
+  if(dragging){
+    endX=p.x;
+    endY=p.y;
+  }else if(moving){
+    const w=endX-startX;
+    const h=endY-startY;
+    startX=p.x-w/2;
+    startY=p.y-h/2;
+    endX=startX+w;
+    endY=startY+h;
+  }
+  draw();
 });
 
 canvas.addEventListener("pointerup",()=>{
-  seleccionando=false;
+  dragging=false;
+  moving=false;
 });
 
-/* =========================
-   OCR SOLO DEL RECORTE
-========================= */
+/* =====================
+   ZOOM PINCH
+===================== */
+canvas.addEventListener("wheel",e=>{
+  e.preventDefault();
+  scale+=e.deltaY*-0.001;
+  scale=Math.min(Math.max(1,scale),4);
+  draw();
+},{passive:false});
+
+/* =====================
+   OCR
+===================== */
 async function procesarOCR(){
-  if(!endX || !endY){
-    alert("Selecciona un área primero");
-    return;
-  }
+  if(!endX) return alert("Selecciona un área");
 
   status.innerText="OCR rápido…";
 
@@ -150,17 +183,21 @@ async function procesarOCR(){
   const w=Math.abs(endX-startX);
   const h=Math.abs(endY-startY);
 
-  const recorte=document.createElement("canvas");
-  recorte.width=w;
-  recorte.height=h;
-  recorte.getContext("2d").drawImage(
-    canvas,x,y,w,h,0,0,w,h
+  const cut=document.createElement("canvas");
+  cut.width=w;
+  cut.height=h;
+  cut.getContext("2d").drawImage(
+    img,
+    x*(img.width/canvas.width),
+    y*(img.height/canvas.height),
+    w*(img.width/canvas.width),
+    h*(img.height/canvas.height),
+    0,0,w,h
   );
 
-  const {data:{text}} = await Tesseract.recognize(
-    recorte,
-    "spa+eng",
-    { tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE }
+  const {data:{text}}=await Tesseract.recognize(
+    cut,"spa+eng",
+    {tessedit_pageseg_mode:Tesseract.PSM.SINGLE_LINE}
   );
 
   const limpio=text.replace(/\s+/g," ").trim();
@@ -169,13 +206,13 @@ async function procesarOCR(){
   status.innerText="✅ Texto extraído";
 }
 
-/* =========================
-   TABLA Y EXCEL
-========================= */
-function agregarFila(texto){
+/* =====================
+   TABLA
+===================== */
+function agregarFila(t){
   const tr=tabla.querySelector("tbody").insertRow();
   tr.insertCell(0).innerText=contador++;
-  tr.insertCell(1).innerText=texto;
+  tr.insertCell(1).innerText=t;
 }
 
 function exportarExcel(){
