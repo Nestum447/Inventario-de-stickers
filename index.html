@@ -39,7 +39,7 @@ canvas{
 <input id="camara" type="file" accept="image/*" capture="environment" hidden onchange="cargarImagen(this)">
 <input id="galeria" type="file" accept="image/*" hidden onchange="cargarImagen(this)">
 
-<div id="status">Dibuja o mueve el cuadro</div>
+<div id="status">Dibuja, mueve o ajusta el cuadro</div>
 
 <canvas id="canvas"></canvas>
 
@@ -61,141 +61,140 @@ let canvas = document.getElementById("canvas");
 let ctx = canvas.getContext("2d");
 let img = new Image();
 
-let startX=0, startY=0, endX=0, endY=0;
-let drawing=false, moving=false;
+let x1=0,y1=0,x2=0,y2=0;
+let mode=null; // draw | move | resize-tl | resize-tr | resize-bl | resize-br
 let contador=1;
+
+const HANDLE = 12;
 
 /* ======================
    CARGAR IMAGEN
 ====================== */
 function cargarImagen(input){
-  const file = input.files[0];
+  const file=input.files[0];
   if(!file) return;
 
-  const reader = new FileReader();
-  reader.onload = e => {
-    img.onload = () => {
-      const max = 1200;
-      const scale = Math.min(max/img.width, max/img.height, 1);
-
-      canvas.width = img.width * scale;
-      canvas.height = img.height * scale;
-
+  const reader=new FileReader();
+  reader.onload=e=>{
+    img.onload=()=>{
+      const max=1200;
+      const s=Math.min(max/img.width,max/img.height,1);
+      canvas.width=img.width*s;
+      canvas.height=img.height*s;
       draw();
     };
-    img.src = e.target.result;
+    img.src=e.target.result;
   };
   reader.readAsDataURL(file);
 }
 
 /* ======================
-   DIBUJAR
+   DIBUJO
 ====================== */
 function draw(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
   ctx.drawImage(img,0,0,canvas.width,canvas.height);
 
-  if(endX){
+  if(x2){
     ctx.strokeStyle="red";
     ctx.lineWidth=2;
-    ctx.strokeRect(
-      startX,
-      startY,
-      endX-startX,
-      endY-startY
-    );
+    ctx.strokeRect(x1,y1,x2-x1,y2-y1);
+    drawHandles();
   }
 }
 
+function drawHandles(){
+  ctx.fillStyle="red";
+  [
+    [x1,y1],[x2,y1],[x1,y2],[x2,y2]
+  ].forEach(p=>{
+    ctx.beginPath();
+    ctx.arc(p[0],p[1],HANDLE/2,0,Math.PI*2);
+    ctx.fill();
+  });
+}
+
 /* ======================
-   POSICIÓN REAL DEL DEDO
+   POSICIÓN REAL
 ====================== */
 function getPos(e){
-  const rect = canvas.getBoundingClientRect();
-  const scaleX = canvas.width / rect.width;
-  const scaleY = canvas.height / rect.height;
-
+  const r=canvas.getBoundingClientRect();
+  const sx=canvas.width/r.width;
+  const sy=canvas.height/r.height;
   return {
-    x: (e.clientX - rect.left) * scaleX,
-    y: (e.clientY - rect.top) * scaleY
+    x:(e.clientX-r.left)*sx,
+    y:(e.clientY-r.top)*sy
   };
+}
+
+/* ======================
+   DETECTAR ESQUINA
+====================== */
+function hitHandle(px,py,hx,hy){
+  return Math.abs(px-hx)<HANDLE && Math.abs(py-hy)<HANDLE;
 }
 
 /* ======================
    INTERACCIÓN
 ====================== */
 canvas.addEventListener("pointerdown",e=>{
-  const p = getPos(e);
+  const p=getPos(e);
 
-  if(
-    p.x > startX && p.x < endX &&
-    p.y > startY && p.y < endY
-  ){
-    moving = true;
-  }else{
-    drawing = true;
-    startX = p.x;
-    startY = p.y;
-    endX = p.x;
-    endY = p.y;
+  if(hitHandle(p.x,p.y,x1,y1)) mode="resize-tl";
+  else if(hitHandle(p.x,p.y,x2,y1)) mode="resize-tr";
+  else if(hitHandle(p.x,p.y,x1,y2)) mode="resize-bl";
+  else if(hitHandle(p.x,p.y,x2,y2)) mode="resize-br";
+  else if(p.x>x1 && p.x<x2 && p.y>y1 && p.y<y2) mode="move";
+  else{
+    mode="draw";
+    x1=p.x; y1=p.y;
+    x2=p.x; y2=p.y;
   }
 });
 
 canvas.addEventListener("pointermove",e=>{
-  if(!drawing && !moving) return;
+  if(!mode) return;
+  const p=getPos(e);
 
-  const p = getPos(e);
-
-  if(drawing){
-    endX = p.x;
-    endY = p.y;
-  }else if(moving){
-    const w = endX - startX;
-    const h = endY - startY;
-    startX = p.x - w/2;
-    startY = p.y - h/2;
-    endX = startX + w;
-    endY = startY + h;
+  if(mode==="draw"){ x2=p.x; y2=p.y; }
+  if(mode==="move"){
+    const w=x2-x1, h=y2-y1;
+    x1=p.x-w/2; y1=p.y-h/2;
+    x2=x1+w; y2=y1+h;
   }
+  if(mode==="resize-tl"){ x1=p.x; y1=p.y; }
+  if(mode==="resize-tr"){ x2=p.x; y1=p.y; }
+  if(mode==="resize-bl"){ x1=p.x; y2=p.y; }
+  if(mode==="resize-br"){ x2=p.x; y2=p.y; }
 
   draw();
 });
 
-canvas.addEventListener("pointerup",()=>{
-  drawing = false;
-  moving = false;
-});
+canvas.addEventListener("pointerup",()=>mode=null);
 
 /* ======================
-   OCR SOLO DEL ÁREA
+   OCR
 ====================== */
 async function procesarOCR(){
-  if(!endX){
-    alert("Selecciona un área primero");
-    return;
-  }
+  if(!x2) return alert("Selecciona un área");
 
-  status.innerText = "OCR rápido…";
+  status.innerText="OCR rápido…";
 
-  const x = Math.min(startX,endX);
-  const y = Math.min(startY,endY);
-  const w = Math.abs(endX-startX);
-  const h = Math.abs(endY-startY);
+  const x=Math.min(x1,x2);
+  const y=Math.min(y1,y2);
+  const w=Math.abs(x2-x1);
+  const h=Math.abs(y2-y1);
 
-  const cut = document.createElement("canvas");
-  cut.width = w;
-  cut.height = h;
-  cut.getContext("2d").drawImage(
-    canvas,x,y,w,h,0,0,w,h
+  const cut=document.createElement("canvas");
+  cut.width=w; cut.height=h;
+  cut.getContext("2d").drawImage(canvas,x,y,w,h,0,0,w,h);
+
+  const {data:{text}}=await Tesseract.recognize(
+    cut,"spa+eng",
+    {tessedit_pageseg_mode:Tesseract.PSM.SINGLE_LINE}
   );
 
-  const {data:{text}} = await Tesseract.recognize(
-    cut,
-    "spa+eng",
-    { tessedit_pageseg_mode: Tesseract.PSM.SINGLE_LINE }
-  );
-
-  const limpio = text.replace(/\s+/g," ").trim();
+  const limpio=text.replace(/\s+/g," ").trim();
   if(limpio) agregarFila(limpio);
 
   status.innerText="✅ Texto extraído";
@@ -205,19 +204,19 @@ async function procesarOCR(){
    TABLA / EXCEL
 ====================== */
 function agregarFila(t){
-  const tr = tabla.querySelector("tbody").insertRow();
-  tr.insertCell(0).innerText = contador++;
-  tr.insertCell(1).innerText = t;
+  const tr=tabla.querySelector("tbody").insertRow();
+  tr.insertCell(0).innerText=contador++;
+  tr.insertCell(1).innerText=t;
 }
 
 function exportarExcel(){
-  const filas = [["#","Descripción"]];
+  const filas=[["#","Descripción"]];
   document.querySelectorAll("#tabla tbody tr").forEach(tr=>{
     filas.push([...tr.cells].map(td=>td.innerText));
   });
 
-  const hoja = XLSX.utils.aoa_to_sheet(filas);
-  const libro = XLSX.utils.book_new();
+  const hoja=XLSX.utils.aoa_to_sheet(filas);
+  const libro=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(libro,hoja,"Inventario");
   XLSX.writeFile(libro,"inventario_pro.xlsx");
 }
