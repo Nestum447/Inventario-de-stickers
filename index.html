@@ -11,7 +11,16 @@
 <style>
 body{font-family:Arial;background:#f3f4f6;padding:14px}
 h2{text-align:center}
-button{width:100%;padding:12px;margin:6px 0;font-size:16px;border:none;border-radius:6px}
+
+button{
+  width:100%;
+  padding:12px;
+  margin:6px 0;
+  font-size:16px;
+  border:none;
+  border-radius:6px
+}
+
 .primary{background:#2563eb;color:white}
 .secondary{background:#16a34a;color:white}
 .export{background:#111827;color:white}
@@ -21,25 +30,49 @@ button.loading{
   cursor:not-allowed;
 }
 
-table{width:100%;border-collapse:collapse;margin-top:10px}
-th,td{border:1px solid #ccc;padding:6px;font-size:13px}
-th{background:#e5e7eb}
-#status{text-align:center;font-size:14px;margin:8px}
+#status{
+  text-align:center;
+  font-size:14px;
+  margin:8px
+}
 
+/* PROGRESO */
 #progressBox{
   width:100%;
   background:#e5e7eb;
   border-radius:6px;
   overflow:hidden;
-  margin-bottom:6px;
   display:none;
+  margin-top:8px;
 }
+
 #progressBar{
   width:0%;
-  height:10px;
+  height:12px;
   background:#2563eb;
   transition:width .2s;
 }
+
+#progressText{
+  text-align:center;
+  font-size:13px;
+  margin-top:4px;
+  font-weight:bold;
+}
+
+table{
+  width:100%;
+  border-collapse:collapse;
+  margin-top:10px
+}
+
+th,td{
+  border:1px solid #ccc;
+  padding:6px;
+  font-size:13px
+}
+
+th{background:#e5e7eb}
 
 td.editing{
   outline:2px solid #2563eb;
@@ -67,14 +100,16 @@ canvas{
 
 <div id="status">Dibuja, mueve o ajusta el cuadro</div>
 
-<div id="progressBox">
-  <div id="progressBar"></div>
-</div>
-
 <canvas id="canvas"></canvas>
 
 <button id="btnOCR" class="export" onclick="procesarOCR()">🔍 Extraer texto</button>
 <button class="export" onclick="exportarExcel()">⬇️ Descargar Excel</button>
+
+<!-- BARRA DE PROGRESO DEBAJO DE DESCARGAR EXCEL -->
+<div id="progressBox">
+  <div id="progressBar"></div>
+</div>
+<div id="progressText"></div>
 
 <table id="tabla">
 <thead>
@@ -158,7 +193,7 @@ function hitHandle(px,py,hx,hy){
 }
 
 /* ======================
-   INTERACCIÓN CANVAS
+   INTERACCIÓN
 ====================== */
 canvas.addEventListener("pointerdown",e=>{
   const p=getPos(e);
@@ -190,7 +225,7 @@ canvas.addEventListener("pointermove",e=>{
 canvas.addEventListener("pointerup",()=>mode=null);
 
 /* ======================
-   OCR CON PROGRESO
+   OCR CON PROGRESO %
 ====================== */
 async function procesarOCR(){
   if(!x2) return alert("Selecciona un área");
@@ -198,13 +233,16 @@ async function procesarOCR(){
   const btn=document.getElementById("btnOCR");
   const progressBox=document.getElementById("progressBox");
   const progressBar=document.getElementById("progressBar");
+  const progressText=document.getElementById("progressText");
 
   btn.classList.add("loading");
   btn.disabled=true;
 
-  status.innerText="⏳ Extrayendo texto…";
   progressBox.style.display="block";
   progressBar.style.width="0%";
+  progressText.innerText="0%";
+
+  status.innerText="⏳ Extrayendo texto…";
 
   const x=Math.min(x1,x2);
   const y=Math.min(y1,y2);
@@ -221,11 +259,12 @@ async function procesarOCR(){
     "spa+eng",
     {
       tessedit_pageseg_mode:Tesseract.PSM.SINGLE_LINE,
-      logger: m=>{
+      logger:m=>{
         if(m.status==="recognizing text"){
           const p=Math.round(m.progress*100);
           progressBar.style.width=p+"%";
-          status.innerText=`🔍 OCR ${p}%`;
+          progressText.innerText=p+"%";
+          status.innerText="🔍 OCR "+p+"%";
         }
       }
     }
@@ -236,41 +275,17 @@ async function procesarOCR(){
 
   btn.classList.remove("loading");
   btn.disabled=false;
-  progressBox.style.display="none";
 
   status.innerText="✅ Texto extraído";
 }
 
 /* ======================
-   TABLA EDITABLE
+   TABLA
 ====================== */
 function agregarFila(texto){
   const tr=tabla.querySelector("tbody").insertRow();
   tr.insertCell(0).innerText=contador++;
-  const td=tr.insertCell(1);
-  td.innerText=texto;
-
-  td.addEventListener("dblclick",()=>editarCelda(td));
-}
-
-function editarCelda(td){
-  if(td.isContentEditable) return;
-  td.contentEditable=true;
-  td.classList.add("editing");
-  td.focus();
-
-  td.addEventListener("blur",()=>cerrarEdicion(td),{once:true});
-  td.addEventListener("keydown",e=>{
-    if(e.key==="Enter"){
-      e.preventDefault();
-      td.blur();
-    }
-  });
-}
-
-function cerrarEdicion(td){
-  td.contentEditable=false;
-  td.classList.remove("editing");
+  tr.insertCell(1).innerText=texto;
 }
 
 /* ======================
