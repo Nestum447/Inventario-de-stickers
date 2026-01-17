@@ -19,6 +19,13 @@ table{width:100%;border-collapse:collapse;margin-top:10px}
 th,td{border:1px solid #ccc;padding:6px;font-size:13px}
 th{background:#e5e7eb}
 #status{text-align:center;font-size:14px;margin:8px}
+
+canvas{
+  width:100%;
+  border:2px dashed #999;
+  margin-top:10px;
+  touch-action:none;
+}
 </style>
 </head>
 
@@ -29,11 +36,14 @@ th{background:#e5e7eb}
 <button class="primary" onclick="camara.click()">📷 Tomar foto</button>
 <button class="secondary" onclick="galeria.click()">🖼️ Cargar imagen</button>
 
-<input id="camara" type="file" accept="image/*" capture="environment" hidden onchange="procesarImagen(this)">
-<input id="galeria" type="file" accept="image/*" hidden onchange="procesarImagen(this)">
+<input id="camara" type="file" accept="image/*" capture="environment" hidden onchange="cargarImagen(this)">
+<input id="galeria" type="file" accept="image/*" hidden onchange="cargarImagen(this)">
 
-<div id="status">Esperando imagen…</div>
+<div id="status">Dibuja, mueve o ajusta el cuadro</div>
 
+<canvas id="canvas"></canvas>
+
+<button class="export" onclick="procesarOCR()">🔍 Extraer texto</button>
 <button class="export" onclick="exportarExcel()">⬇️ Descargar Excel</button>
 
 <table id="tabla">
@@ -47,117 +57,170 @@ th{background:#e5e7eb}
 </table>
 
 <script>
-let contador = 1;
+let canvas = document.getElementById("canvas");
+let ctx = canvas.getContext("2d");
+let img = new Image();
 
-async function procesarImagen(input){
-  const file = input.files[0];
+let x1=0,y1=0,x2=0,y2=0;
+let mode=null; // draw | move | resize-tl | resize-tr | resize-bl | resize-br
+let contador=1;
+
+const HANDLE = 12;
+
+/* ======================
+   CARGAR IMAGEN
+====================== */
+function cargarImagen(input){
+  const file=input.files[0];
   if(!file) return;
 
-  status.innerText = "🔍 Analizando imagen...";
-
-  const img = new Image();
-  img.src = URL.createObjectURL(file);
-  await img.decode();
-
-  const canvas = document.createElement("canvas");
-  const ctx = canvas.getContext("2d");
-  canvas.width = img.width;
-  canvas.height = img.height;
-  ctx.drawImage(img,0,0);
-
-  // Convertir a blanco y negro
-  const imageData = ctx.getImageData(0,0,canvas.width,canvas.height);
-  const data = imageData.data;
-
-  for(let i=0;i<data.length;i+=4){
-    const g = data[i]*0.3 + data[i+1]*0.59 + data[i+2]*0.11;
-    const v = g > 160 ? 255 : 0;
-    data[i]=data[i+1]=data[i+2]=v;
-  }
-  ctx.putImageData(imageData,0,0);
-
-  // Autodetección de líneas
-  const lines = detectarLineas(imageData, canvas.width, canvas.height);
-
-  let textoFinal = "";
-
-  for(let i=0;i<lines.length;i++){
-    status.innerText = `OCR línea ${i+1}/${lines.length}`;
-
-    const {data:{text}} = await Tesseract.recognize(
-      lines[i],
-      "spa+eng",
-      { tessedit_pageseg_mode: 7 }
-    );
-
-    textoFinal += text.trim() + " ";
-  }
-
-  if(textoFinal.trim()) agregarFila(textoFinal.trim());
-
-  status.innerText = "✅ Procesado";
-  input.value = "";
+  const reader=new FileReader();
+  reader.onload=e=>{
+    img.onload=()=>{
+      const max=1200;
+      const s=Math.min(max/img.width,max/img.height,1);
+      canvas.width=img.width*s;
+      canvas.height=img.height*s;
+      draw();
+    };
+    img.src=e.target.result;
+  };
+  reader.readAsDataURL(file);
 }
 
-// Detecta bandas horizontales con texto
-function detectarLineas(imageData, w, h){
-  const rows = [];
-  const data = imageData.data;
+/* ======================
+   DIBUJO
+====================== */
+function draw(){
+  ctx.clearRect(0,0,canvas.width,canvas.height);
+  ctx.drawImage(img,0,0,canvas.width,canvas.height);
 
-  for(let y=0;y<h;y++){
-    let count = 0;
-    for(let x=0;x<w;x++){
-      const i = (y*w + x)*4;
-      if(data[i] === 0) count++;
-    }
-    rows.push(count);
+  if(x2){
+    ctx.strokeStyle="red";
+    ctx.lineWidth=2;
+    ctx.strokeRect(x1,y1,x2-x1,y2-y1);
+    drawHandles();
   }
-
-  const lines = [];
-  let start = null;
-
-  for(let y=0;y<h;y++){
-    if(rows[y] > w*0.01){
-      if(start === null) start = y;
-    } else {
-      if(start !== null && y-start > 10){
-        lines.push(cortarLinea(imageData, w, start, y));
-        start = null;
-      }
-    }
-  }
-
-  return lines;
 }
 
-// Recorta cada línea
-function cortarLinea(imageData, w, y1, y2){
-  const canvas = document.createElement("canvas");
-  canvas.width = w;
-  canvas.height = y2 - y1;
-  const ctx = canvas.getContext("2d");
-  ctx.putImageData(imageData,0,-y1);
-  return canvas;
+function drawHandles(){
+  ctx.fillStyle="red";
+  [
+    [x1,y1],[x2,y1],[x1,y2],[x2,y2]
+  ].forEach(p=>{
+    ctx.beginPath();
+    ctx.arc(p[0],p[1],HANDLE/2,0,Math.PI*2);
+    ctx.fill();
+  });
 }
 
-function agregarFila(texto){
-  const tr = tabla.querySelector("tbody").insertRow();
-  tr.insertCell(0).innerText = contador++;
-  tr.insertCell(1).innerText = texto;
+/* ======================
+   POSICIÓN REAL
+====================== */
+function getPos(e){
+  const r=canvas.getBoundingClientRect();
+  const sx=canvas.width/r.width;
+  const sy=canvas.height/r.height;
+  return {
+    x:(e.clientX-r.left)*sx,
+    y:(e.clientY-r.top)*sy
+  };
+}
+
+/* ======================
+   DETECTAR ESQUINA
+====================== */
+function hitHandle(px,py,hx,hy){
+  return Math.abs(px-hx)<HANDLE && Math.abs(py-hy)<HANDLE;
+}
+
+/* ======================
+   INTERACCIÓN
+====================== */
+canvas.addEventListener("pointerdown",e=>{
+  const p=getPos(e);
+
+  if(hitHandle(p.x,p.y,x1,y1)) mode="resize-tl";
+  else if(hitHandle(p.x,p.y,x2,y1)) mode="resize-tr";
+  else if(hitHandle(p.x,p.y,x1,y2)) mode="resize-bl";
+  else if(hitHandle(p.x,p.y,x2,y2)) mode="resize-br";
+  else if(p.x>x1 && p.x<x2 && p.y>y1 && p.y<y2) mode="move";
+  else{
+    mode="draw";
+    x1=p.x; y1=p.y;
+    x2=p.x; y2=p.y;
+  }
+});
+
+canvas.addEventListener("pointermove",e=>{
+  if(!mode) return;
+  const p=getPos(e);
+
+  if(mode==="draw"){ x2=p.x; y2=p.y; }
+  if(mode==="move"){
+    const w=x2-x1, h=y2-y1;
+    x1=p.x-w/2; y1=p.y-h/2;
+    x2=x1+w; y2=y1+h;
+  }
+  if(mode==="resize-tl"){ x1=p.x; y1=p.y; }
+  if(mode==="resize-tr"){ x2=p.x; y1=p.y; }
+  if(mode==="resize-bl"){ x1=p.x; y2=p.y; }
+  if(mode==="resize-br"){ x2=p.x; y2=p.y; }
+
+  draw();
+});
+
+canvas.addEventListener("pointerup",()=>mode=null);
+
+/* ======================
+   OCR
+====================== */
+async function procesarOCR(){
+  if(!x2) return alert("Selecciona un área");
+
+  status.innerText="OCR rápido…";
+
+  const x=Math.min(x1,x2);
+  const y=Math.min(y1,y2);
+  const w=Math.abs(x2-x1);
+  const h=Math.abs(y2-y1);
+
+  const cut=document.createElement("canvas");
+  cut.width=w; cut.height=h;
+  cut.getContext("2d").drawImage(canvas,x,y,w,h,0,0,w,h);
+
+  const {data:{text}}=await Tesseract.recognize(
+    cut,"spa+eng",
+    {tessedit_pageseg_mode:Tesseract.PSM.SINGLE_LINE}
+  );
+
+  const limpio=text.replace(/\s+/g," ").trim();
+  if(limpio) agregarFila(limpio);
+
+  status.innerText="✅ Texto extraído";
+}
+
+/* ======================
+   TABLA / EXCEL
+====================== */
+function agregarFila(t){
+  const tr=tabla.querySelector("tbody").insertRow();
+  tr.insertCell(0).innerText=contador++;
+  tr.insertCell(1).innerText=t;
 }
 
 function exportarExcel(){
-  const filas = [["#","Descripción"]];
+  const filas=[["#","Descripción"]];
   document.querySelectorAll("#tabla tbody tr").forEach(tr=>{
     filas.push([...tr.cells].map(td=>td.innerText));
   });
 
-  const hoja = XLSX.utils.aoa_to_sheet(filas);
-  const libro = XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(libro, hoja, "Inventario");
-  XLSX.writeFile(libro, "inventario_pro.xlsx");
+  const hoja=XLSX.utils.aoa_to_sheet(filas);
+  const libro=XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(libro,hoja,"Inventario");
+  XLSX.writeFile(libro,"inventario_pro.xlsx");
 }
 </script>
 
 </body>
-</html>
+  </html>
