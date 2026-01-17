@@ -40,10 +40,6 @@ th{background:#e5e7eb}
 <thead>
 <tr>
 <th>#</th>
-<th>Código</th>
-<th>Fecha</th>
-<th>Lote</th>
-<th>Cantidad</th>
 <th>Descripción</th>
 </tr>
 </thead>
@@ -51,61 +47,51 @@ th{background:#e5e7eb}
 </table>
 
 <script>
-let contador=1;
+let contador = 1;
 
 async function procesarImagen(input){
-  const img=input.files[0];
+  const img = input.files[0];
   if(!img) return;
 
-  status.innerText="🔍 Procesando OCR…";
+  status.innerText = "🔍 Procesando OCR…";
 
-  const {data:{text}} = await Tesseract.recognize(
-    img,'spa+eng',
-    {logger:m=>{
-      if(m.status==="recognizing text")
-        status.innerText="OCR "+Math.round(m.progress*100)+"%";
-    }}
+  const result = await Tesseract.recognize(
+    img,
+    "spa+eng",
+    {
+      tessedit_pageseg_mode: Tesseract.PSM.SINGLE_BLOCK
+    }
   );
 
-  if(text.trim()) agregarFila(text);
-  status.innerText="✅ Procesado";
-  input.value="";
+  const texto = result.data.text
+    .replace(/\n+/g," ")
+    .replace(/\s+/g," ")
+    .trim();
+
+  if(texto) agregarFila(texto);
+
+  status.innerText = "✅ Procesado";
+  input.value = "";
 }
 
-function agregarFila(texto){
-  const lineas=texto.split(/\n+/).map(l=>l.trim()).filter(Boolean);
-
-  let codigo="", fecha="", lote="", cantidad="", descripcion=[];
-
-  lineas.forEach(l=>{
-    if(!codigo && /[A-Z0-9\-]{3,}/i.test(l)) codigo=l.match(/[A-Z0-9\-]{3,}/i)[0];
-    else if(!fecha && /\d{2}[\/\-]\d{2}[\/\-]\d{4}/.test(l)) fecha=l.match(/\d{2}[\/\-]\d{2}[\/\-]\d{4}/)[0];
-    else if(!lote && /LOT|LOTE/i.test(l)) lote=l.replace(/[^0-9A-Z\-]/gi,"");
-    else if(!cantidad && /\b\d+\b/.test(l)) cantidad=l.match(/\b\d+\b/)[0];
-    else descripcion.push(l);
-  });
-
-  const tr=tabla.querySelector("tbody").insertRow();
-  tr.insertCell(0).innerText=contador++;
-  tr.insertCell(1).innerText=codigo;
-  tr.insertCell(2).innerText=fecha;
-  tr.insertCell(3).innerText=lote;
-  tr.insertCell(4).innerText=cantidad;
-  tr.insertCell(5).innerText=descripcion.join(" ");
+function agregarFila(descripcion){
+  const tr = tabla.querySelector("tbody").insertRow();
+  tr.insertCell(0).innerText = contador++;
+  tr.insertCell(1).innerText = descripcion;
 }
 
 function exportarExcel(){
-  const filas=[["#","Código","Fecha","Lote","Cantidad","Descripción"]];
+  const filas = [["#", "Descripción"]];
   document.querySelectorAll("#tabla tbody tr").forEach(tr=>{
     filas.push([...tr.cells].map(td=>td.innerText));
   });
 
-  const hoja=XLSX.utils.aoa_to_sheet(filas);
-  const libro=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(libro,hoja,"Inventario");
-  XLSX.writeFile(libro,"inventario_pro.xlsx");
+  const hoja = XLSX.utils.aoa_to_sheet(filas);
+  const libro = XLSX.utils.book_new();
+  XLSX.utils.book_append_sheet(libro, hoja, "Inventario");
+  XLSX.writeFile(libro, "inventario_pro.xlsx");
 }
 </script>
 
 </body>
-  </html>
+</html>
