@@ -15,10 +15,31 @@ button{width:100%;padding:12px;margin:6px 0;font-size:16px;border:none;border-ra
 .primary{background:#2563eb;color:white}
 .secondary{background:#16a34a;color:white}
 .export{background:#111827;color:white}
+
+button.loading{
+  background:#9ca3af !important;
+  cursor:not-allowed;
+}
+
 table{width:100%;border-collapse:collapse;margin-top:10px}
 th,td{border:1px solid #ccc;padding:6px;font-size:13px}
 th{background:#e5e7eb}
 #status{text-align:center;font-size:14px;margin:8px}
+
+#progressBox{
+  width:100%;
+  background:#e5e7eb;
+  border-radius:6px;
+  overflow:hidden;
+  margin-bottom:6px;
+  display:none;
+}
+#progressBar{
+  width:0%;
+  height:10px;
+  background:#2563eb;
+  transition:width .2s;
+}
 
 td.editing{
   outline:2px solid #2563eb;
@@ -46,9 +67,13 @@ canvas{
 
 <div id="status">Dibuja, mueve o ajusta el cuadro</div>
 
+<div id="progressBox">
+  <div id="progressBar"></div>
+</div>
+
 <canvas id="canvas"></canvas>
 
-<button class="export" onclick="procesarOCR()">🔍 Extraer texto</button>
+<button id="btnOCR" class="export" onclick="procesarOCR()">🔍 Extraer texto</button>
 <button class="export" onclick="exportarExcel()">⬇️ Descargar Excel</button>
 
 <table id="tabla">
@@ -165,12 +190,21 @@ canvas.addEventListener("pointermove",e=>{
 canvas.addEventListener("pointerup",()=>mode=null);
 
 /* ======================
-   OCR
+   OCR CON PROGRESO
 ====================== */
 async function procesarOCR(){
   if(!x2) return alert("Selecciona un área");
 
-  status.innerText="OCR rápido…";
+  const btn=document.getElementById("btnOCR");
+  const progressBox=document.getElementById("progressBox");
+  const progressBar=document.getElementById("progressBar");
+
+  btn.classList.add("loading");
+  btn.disabled=true;
+
+  status.innerText="⏳ Extrayendo texto…";
+  progressBox.style.display="block";
+  progressBar.style.width="0%";
 
   const x=Math.min(x1,x2);
   const y=Math.min(y1,y2);
@@ -178,16 +212,31 @@ async function procesarOCR(){
   const h=Math.abs(y2-y1);
 
   const cut=document.createElement("canvas");
-  cut.width=w; cut.height=h;
+  cut.width=w;
+  cut.height=h;
   cut.getContext("2d").drawImage(canvas,x,y,w,h,0,0,w,h);
 
-  const {data:{text}}=await Tesseract.recognize(
-    cut,"spa+eng",
-    {tessedit_pageseg_mode:Tesseract.PSM.SINGLE_LINE}
+  const {data:{text}} = await Tesseract.recognize(
+    cut,
+    "spa+eng",
+    {
+      tessedit_pageseg_mode:Tesseract.PSM.SINGLE_LINE,
+      logger: m=>{
+        if(m.status==="recognizing text"){
+          const p=Math.round(m.progress*100);
+          progressBar.style.width=p+"%";
+          status.innerText=`🔍 OCR ${p}%`;
+        }
+      }
+    }
   );
 
   const limpio=text.replace(/\s+/g," ").trim();
   if(limpio) agregarFila(limpio);
+
+  btn.classList.remove("loading");
+  btn.disabled=false;
+  progressBox.style.display="none";
 
   status.innerText="✅ Texto extraído";
 }
