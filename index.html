@@ -25,18 +25,9 @@ button{
 .secondary{background:#16a34a;color:white}
 .export{background:#111827;color:white}
 
-button.loading{
-  background:#9ca3af !important;
-  cursor:not-allowed;
-}
+#status{text-align:center;font-size:14px;margin:8px}
 
-#status{
-  text-align:center;
-  font-size:14px;
-  margin:8px
-}
-
-/* CONTENEDOR CON SCROLL */
+/* CONTENEDOR */
 #canvasContainer{
   width:100%;
   max-height:420px;
@@ -44,6 +35,19 @@ button.loading{
   overflow:auto;
   background:#fff;
   margin-top:10px;
+}
+
+/* SCROLL GRUESO */
+#canvasContainer::-webkit-scrollbar{
+  width:16px;
+  height:16px;
+}
+#canvasContainer::-webkit-scrollbar-thumb{
+  background:#9ca3af;
+  border-radius:10px;
+}
+#canvasContainer::-webkit-scrollbar-track{
+  background:#e5e7eb;
 }
 
 canvas{
@@ -61,33 +65,19 @@ canvas{
   display:none;
   margin-top:8px;
 }
-
 #progressBar{
   width:0%;
   height:12px;
   background:#2563eb;
-  transition:width .2s;
 }
-
-#progressText{
-  text-align:center;
-  font-size:13px;
-  margin-top:4px;
-  font-weight:bold;
-}
+#progressText{text-align:center;font-weight:bold}
 
 table{
   width:100%;
   border-collapse:collapse;
   margin-top:10px
 }
-
-th,td{
-  border:1px solid #ccc;
-  padding:6px;
-  font-size:13px
-}
-
+th,td{border:1px solid #ccc;padding:6px;font-size:13px}
 th{background:#e5e7eb}
 </style>
 </head>
@@ -102,45 +92,35 @@ th{background:#e5e7eb}
 <input id="camara" type="file" accept="image/*" capture="environment" hidden onchange="cargarImagen(this)">
 <input id="galeria" type="file" accept="image/*" hidden onchange="cargarImagen(this)">
 
-<div id="status">Dibuja, mueve o ajusta el cuadro</div>
+<div id="status">Selecciona un área dentro de la imagen</div>
 
 <div id="canvasContainer">
   <canvas id="canvas"></canvas>
 </div>
 
-<button id="btnOCR" class="export" onclick="procesarOCR()">🔍 Extraer texto</button>
-<button class="export" onclick="exportarExcel()">⬇️ Descargar Excel</button>
+<button class="export" onclick="procesarOCR()">🔍 Extraer texto</button>
 
-<div id="progressBox">
-  <div id="progressBar"></div>
-</div>
+<div id="progressBox"><div id="progressBar"></div></div>
 <div id="progressText"></div>
 
 <table id="tabla">
-<thead>
-<tr>
-<th>#</th>
-<th>Descripción</th>
-</tr>
-</thead>
+<thead><tr><th>#</th><th>Descripción</th></tr></thead>
 <tbody></tbody>
 </table>
 
 <script>
-let canvas=document.getElementById("canvas");
-let ctx=canvas.getContext("2d");
+const canvas=document.getElementById("canvas");
+const ctx=canvas.getContext("2d");
+const container=document.getElementById("canvasContainer");
 let img=new Image();
-let container=document.getElementById("canvasContainer");
+
+let scale=1;
+const MIN_ZOOM=0.5, MAX_ZOOM=3;
 
 let x1=0,y1=0,x2=0,y2=0;
 let mode=null;
 let contador=1;
 const HANDLE=12;
-
-/* ZOOM */
-let scale=1;
-const MIN_ZOOM=0.5;
-const MAX_ZOOM=3;
 
 /* ======================
    CARGAR IMAGEN
@@ -154,13 +134,7 @@ function cargarImagen(input){
     img.onload=()=>{
       canvas.width=img.width;
       canvas.height=img.height;
-
-      scale=Math.min(
-        container.clientWidth/img.width,
-        400/img.height,
-        1
-      );
-
+      scale=Math.min(container.clientWidth/img.width,1);
       x1=y1=x2=y2=0;
       draw();
     };
@@ -195,7 +169,7 @@ function drawHandles(){
 }
 
 /* ======================
-   POSICIÓN REAL
+   COORDENADAS
 ====================== */
 function getPos(e){
   const r=canvas.getBoundingClientRect();
@@ -205,8 +179,8 @@ function getPos(e){
   };
 }
 
-function hitHandle(px,py,hx,hy){
-  return Math.abs(px-hx)<HANDLE && Math.abs(py-hy)<HANDLE;
+function dentroImagen(p){
+  return p.x>=0 && p.y>=0 && p.x<=img.width && p.y<=img.height;
 }
 
 /* ======================
@@ -214,55 +188,38 @@ function hitHandle(px,py,hx,hy){
 ====================== */
 canvas.addEventListener("pointerdown",e=>{
   const p=getPos(e);
-  if(hitHandle(p.x,p.y,x1,y1)) mode="resize-tl";
-  else if(hitHandle(p.x,p.y,x2,y1)) mode="resize-tr";
-  else if(hitHandle(p.x,p.y,x1,y2)) mode="resize-bl";
-  else if(hitHandle(p.x,p.y,x2,y2)) mode="resize-br";
-  else if(p.x>x1 && p.x<x2 && p.y>y1 && p.y<y2) mode="move";
-  else{ mode="draw"; x1=p.x; y1=p.y; x2=p.x; y2=p.y; }
+  if(!dentroImagen(p)) return;
+
+  mode="draw";
+  x1=p.x; y1=p.y;
+  x2=p.x; y2=p.y;
 });
 
 canvas.addEventListener("pointermove",e=>{
   if(!mode) return;
   const p=getPos(e);
-
-  if(mode==="draw"){ x2=p.x; y2=p.y; }
-  if(mode==="move"){
-    const w=x2-x1,h=y2-y1;
-    x1=p.x-w/2; y1=p.y-h/2;
-    x2=x1+w; y2=y1+h;
-  }
-  if(mode==="resize-tl"){ x1=p.x; y1=p.y; }
-  if(mode==="resize-tr"){ x2=p.x; y1=p.y; }
-  if(mode==="resize-bl"){ x1=p.x; y2=p.y; }
-  if(mode==="resize-br"){ x2=p.x; y2=p.y; }
-
+  if(!dentroImagen(p)) return;
+  x2=p.x; y2=p.y;
   draw();
 });
+
 canvas.addEventListener("pointerup",()=>mode=null);
 
-/* ZOOM CON RUEDA */
-canvas.addEventListener("wheel",e=>{
+/* ======================
+   ZOOM DESDE CONTENEDOR
+====================== */
+container.addEventListener("wheel",e=>{
   e.preventDefault();
   const delta=e.deltaY<0?1.1:0.9;
-  scale*=delta;
-  scale=Math.min(Math.max(scale,MIN_ZOOM),MAX_ZOOM);
+  scale=Math.min(Math.max(scale*delta,MIN_ZOOM),MAX_ZOOM);
   draw();
 },{passive:false});
 
 /* ======================
-   OCR
+   OCR CORREGIDO
 ====================== */
 async function procesarOCR(){
-  if(!x2) return alert("Selecciona un área");
-
-  const btn=document.getElementById("btnOCR");
-  const progressBox=document.getElementById("progressBox");
-  const progressBar=document.getElementById("progressBar");
-  const progressText=document.getElementById("progressText");
-
-  btn.disabled=true;
-  progressBox.style.display="block";
+  if(!x2) return alert("Selecciona un área válida");
 
   const x=Math.min(x1,x2);
   const y=Math.min(y1,y2);
@@ -272,47 +229,25 @@ async function procesarOCR(){
   const cut=document.createElement("canvas");
   cut.width=w;
   cut.height=h;
-  cut.getContext("2d").drawImage(canvas,x,y,w,h,0,0,w,h);
+  cut.getContext("2d").drawImage(img,x,y,w,h,0,0,w,h);
+
+  progressBox.style.display="block";
 
   const {data:{text}}=await Tesseract.recognize(
-    cut,"spa+eng",
-    {logger:m=>{
+    cut,"spa+eng",{logger:m=>{
       if(m.status==="recognizing text"){
-        const p=Math.round(m.progress*100);
-        progressBar.style.width=p+"%";
-        progressText.innerText=p+"%";
+        progressBar.style.width=(m.progress*100)+"%";
+        progressText.innerText=Math.round(m.progress*100)+"%";
       }
     }}
   );
 
   const limpio=text.replace(/\s+/g," ").trim();
-  if(limpio) agregarFila(limpio);
-
-  btn.disabled=false;
-}
-
-/* ======================
-   TABLA
-====================== */
-function agregarFila(texto){
-  const tr=tabla.querySelector("tbody").insertRow();
-  tr.insertCell(0).innerText=contador++;
-  tr.insertCell(1).innerText=texto;
-}
-
-/* ======================
-   EXCEL
-====================== */
-function exportarExcel(){
-  const filas=[["#","Descripción"]];
-  document.querySelectorAll("#tabla tbody tr").forEach(tr=>{
-    filas.push([...tr.cells].map(td=>td.innerText));
-  });
-
-  const hoja=XLSX.utils.aoa_to_sheet(filas);
-  const libro=XLSX.utils.book_new();
-  XLSX.utils.book_append_sheet(libro,hoja,"Inventario");
-  XLSX.writeFile(libro,"inventario_pro.xlsx");
+  if(limpio){
+    const tr=tabla.querySelector("tbody").insertRow();
+    tr.insertCell(0).innerText=contador++;
+    tr.insertCell(1).innerText=limpio;
+  }
 }
 </script>
 
