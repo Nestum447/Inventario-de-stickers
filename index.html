@@ -30,11 +30,7 @@ button.loading{
   cursor:not-allowed;
 }
 
-#status{
-  text-align:center;
-  font-size:14px;
-  margin:8px
-}
+#status{text-align:center;font-size:14px;margin:8px}
 
 #progressBox{
   width:100%;
@@ -52,30 +48,25 @@ button.loading{
   transition:width .2s;
 }
 
-#progressText{
-  text-align:center;
-  font-size:13px;
-  margin-top:4px;
-  font-weight:bold;
-}
+#progressText{text-align:center;font-size:13px;margin-top:4px;font-weight:bold}
 
-table{
-  width:100%;
-  border-collapse:collapse;
-  margin-top:10px
-}
-
-th,td{
-  border:1px solid #ccc;
-  padding:6px;
-  font-size:13px
-}
-
+table{width:100%;border-collapse:collapse;margin-top:10px}
+th,td{border:1px solid #ccc;padding:6px;font-size:13px}
 th{background:#e5e7eb}
 
 td.editing{
   outline:2px solid #2563eb;
   background:#eef2ff;
+}
+
+.btn-del{
+  background:#dc2626;
+  color:white;
+  border:none;
+  border-radius:4px;
+  padding:4px 6px;
+  cursor:pointer;
+  font-size:12px;
 }
 
 canvas{
@@ -104,9 +95,7 @@ canvas{
 <button id="btnOCR" class="export" onclick="procesarOCR()">🔍 Extraer texto</button>
 <button class="export" onclick="exportarExcel()">⬇️ Descargar Excel</button>
 
-<div id="progressBox">
-  <div id="progressBar"></div>
-</div>
+<div id="progressBox"><div id="progressBar"></div></div>
 <div id="progressText"></div>
 
 <table id="tabla">
@@ -114,6 +103,7 @@ canvas{
 <tr>
 <th>#</th>
 <th>Descripción</th>
+<th>❌</th>
 </tr>
 </thead>
 <tbody></tbody>
@@ -129,92 +119,7 @@ let mode=null;
 let contador=1;
 const HANDLE=12;
 
-/* CARGAR IMAGEN */
-function cargarImagen(input){
-  const file=input.files[0];
-  if(!file) return;
-
-  const reader=new FileReader();
-  reader.onload=e=>{
-    img.onload=()=>{
-      const max=1200;
-      const s=Math.min(max/img.width,max/img.height,1);
-      canvas.width=img.width*s;
-      canvas.height=img.height*s;
-      draw();
-    };
-    img.src=e.target.result;
-  };
-  reader.readAsDataURL(file);
-}
-
-/* DIBUJO */
-function draw(){
-  ctx.clearRect(0,0,canvas.width,canvas.height);
-  ctx.drawImage(img,0,0,canvas.width,canvas.height);
-  if(x2){
-    ctx.strokeStyle="red";
-    ctx.lineWidth=2;
-    ctx.strokeRect(x1,y1,x2-x1,y2-y1);
-    drawHandles();
-  }
-}
-
-function drawHandles(){
-  ctx.fillStyle="red";
-  [[x1,y1],[x2,y1],[x1,y2],[x2,y2]].forEach(p=>{
-    ctx.beginPath();
-    ctx.arc(p[0],p[1],HANDLE/2,0,Math.PI*2);
-    ctx.fill();
-  });
-}
-
-/* POSICIÓN REAL */
-function getPos(e){
-  const r=canvas.getBoundingClientRect();
-  const sx=canvas.width/r.width;
-  const sy=canvas.height/r.height;
-  return {
-    x:(e.clientX-r.left)*sx,
-    y:(e.clientY-r.top)*sy
-  };
-}
-
-function hitHandle(px,py,hx,hy){
-  return Math.abs(px-hx)<HANDLE && Math.abs(py-hy)<HANDLE;
-}
-
-/* INTERACCIÓN */
-canvas.addEventListener("pointerdown",e=>{
-  const p=getPos(e);
-  if(hitHandle(p.x,p.y,x1,y1)) mode="resize-tl";
-  else if(hitHandle(p.x,p.y,x2,y1)) mode="resize-tr";
-  else if(hitHandle(p.x,p.y,x1,y2)) mode="resize-bl";
-  else if(hitHandle(p.x,p.y,x2,y2)) mode="resize-br";
-  else if(p.x>x1 && p.x<x2 && p.y>y1 && p.y<y2) mode="move";
-  else{ mode="draw"; x1=p.x; y1=p.y; x2=p.x; y2=p.y; }
-});
-
-canvas.addEventListener("pointermove",e=>{
-  if(!mode) return;
-  const p=getPos(e);
-
-  if(mode==="draw"){ x2=p.x; y2=p.y; }
-  if(mode==="move"){
-    const w=x2-x1,h=y2-y1;
-    x1=p.x-w/2; y1=p.y-h/2;
-    x2=x1+w; y2=y1+h;
-  }
-  if(mode==="resize-tl"){ x1=p.x; y1=p.y; }
-  if(mode==="resize-tr"){ x2=p.x; y1=p.y; }
-  if(mode==="resize-bl"){ x1=p.x; y2=p.y; }
-  if(mode==="resize-br"){ x2=p.x; y2=p.y; }
-
-  draw();
-});
-canvas.addEventListener("pointerup",()=>mode=null);
-
-/* OCR CON PROGRESO */
+/* ================= OCR ================= */
 async function procesarOCR(){
   if(!x2) return alert("Selecciona un área");
 
@@ -225,7 +130,6 @@ async function procesarOCR(){
 
   btn.disabled=true;
   btn.classList.add("loading");
-
   progressBox.style.display="block";
   progressBar.style.width="0%";
   progressText.innerText="0%";
@@ -241,17 +145,14 @@ async function procesarOCR(){
   cut.getContext("2d").drawImage(canvas,x,y,w,h,0,0,w,h);
 
   const {data:{text}} = await Tesseract.recognize(
-    cut,
-    "spa+eng",
-    {
-      logger:m=>{
-        if(m.status==="recognizing text"){
-          const p=Math.round(m.progress*100);
-          progressBar.style.width=p+"%";
-          progressText.innerText=p+"%";
-        }
+    cut,"spa+eng",
+    {logger:m=>{
+      if(m.status==="recognizing text"){
+        const p=Math.round(m.progress*100);
+        progressBar.style.width=p+"%";
+        progressText.innerText=p+"%";
       }
-    }
+    }}
   );
 
   const limpio=text.replace(/\s+/g," ").trim();
@@ -261,17 +162,36 @@ async function procesarOCR(){
   btn.classList.remove("loading");
 }
 
-/* TABLA */
+/* ================= TABLA ================= */
 function agregarFila(texto){
   const tr=tabla.querySelector("tbody").insertRow();
   tr.insertCell(0).innerText=contador++;
   tr.insertCell(1).innerText=texto;
+
+  const del=tr.insertCell(2);
+  const btn=document.createElement("button");
+  btn.innerText="🗑";
+  btn.className="btn-del";
+  btn.onclick=()=>{
+    if(confirm("¿Eliminar esta fila?")){
+      tr.remove();
+      renumerar();
+    }
+  };
+  del.appendChild(btn);
+}
+
+function renumerar(){
+  contador=1;
+  document.querySelectorAll("#tabla tbody tr").forEach(tr=>{
+    tr.cells[0].innerText=contador++;
+  });
 }
 
 /* EDICIÓN DOBLE CLICK */
 document.getElementById("tabla").addEventListener("dblclick",e=>{
   const td=e.target;
-  if(td.tagName!=="TD" || td.cellIndex===0) return;
+  if(td.tagName!=="TD" || td.cellIndex!==1) return;
 
   if(td.classList.contains("editing")) return;
 
@@ -279,11 +199,9 @@ document.getElementById("tabla").addEventListener("dblclick",e=>{
   const original=td.innerText;
 
   const input=document.createElement("input");
-  input.type="text";
   input.value=original;
   input.style.width="100%";
   input.style.border="none";
-  input.style.outline="none";
 
   td.innerText="";
   td.appendChild(input);
@@ -294,21 +212,21 @@ document.getElementById("tabla").addEventListener("dblclick",e=>{
     td.classList.remove("editing");
   };
 
-  input.addEventListener("blur",guardar);
-  input.addEventListener("keydown",ev=>{
-    if(ev.key==="Enter") guardar();
-    if(ev.key==="Escape"){
+  input.onblur=guardar;
+  input.onkeydown=e=>{
+    if(e.key==="Enter") guardar();
+    if(e.key==="Escape"){
       td.innerText=original;
       td.classList.remove("editing");
     }
-  });
+  };
 });
 
-/* EXCEL */
+/* ================= EXCEL ================= */
 function exportarExcel(){
   const filas=[["#","Descripción"]];
   document.querySelectorAll("#tabla tbody tr").forEach(tr=>{
-    filas.push([...tr.cells].map(td=>td.innerText));
+    filas.push([tr.cells[0].innerText,tr.cells[1].innerText]);
   });
 
   const hoja=XLSX.utils.aoa_to_sheet(filas);
