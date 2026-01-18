@@ -75,7 +75,7 @@ canvas{
 <input id="camara" type="file" accept="image/*" capture="environment" hidden onchange="cargarImagen(this)">
 <input id="galeria" type="file" accept="image/*" hidden onchange="cargarImagen(this)">
 
-<div id="status">Dibuja el área a reconocer</div>
+<div id="status">Dibuja o arrastra el cuadro</div>
 
 <canvas id="canvas"></canvas>
 
@@ -97,12 +97,13 @@ canvas{
 </table>
 
 <script>
-let canvas=document.getElementById("canvas");
-let ctx=canvas.getContext("2d");
-let img=new Image();
+const canvas=document.getElementById("canvas");
+const ctx=canvas.getContext("2d");
+const img=new Image();
 
 let x1=0,y1=0,x2=0,y2=0;
 let mode=null;
+let offsetX=0,offsetY=0;
 let contador=1;
 
 /* ================= CARGAR IMAGEN ================= */
@@ -135,19 +136,45 @@ function draw(){
   }
 }
 
-canvas.addEventListener("pointerdown",e=>{
+function getPos(e){
   const r=canvas.getBoundingClientRect();
-  x1=(e.clientX-r.left)*(canvas.width/r.width);
-  y1=(e.clientY-r.top)*(canvas.height/r.height);
-  x2=x1; y2=y1;
-  mode="draw";
+  return {
+    x:(e.clientX-r.left)*(canvas.width/r.width),
+    y:(e.clientY-r.top)*(canvas.height/r.height)
+  };
+}
+
+/* ================= INTERACCIÓN ================= */
+canvas.addEventListener("pointerdown",e=>{
+  const p=getPos(e);
+
+  if(p.x>x1 && p.x<x2 && p.y>y1 && p.y<y2){
+    mode="move";
+    offsetX=p.x-x1;
+    offsetY=p.y-y1;
+  }else{
+    mode="draw";
+    x1=p.x; y1=p.y;
+    x2=p.x; y2=p.y;
+  }
 });
 
 canvas.addEventListener("pointermove",e=>{
   if(!mode) return;
-  const r=canvas.getBoundingClientRect();
-  x2=(e.clientX-r.left)*(canvas.width/r.width);
-  y2=(e.clientY-r.top)*(canvas.height/r.height);
+  const p=getPos(e);
+
+  if(mode==="draw"){
+    x2=p.x; y2=p.y;
+  }
+
+  if(mode==="move"){
+    const w=x2-x1, h=y2-y1;
+    x1=p.x-offsetX;
+    y1=p.y-offsetY;
+    x2=x1+w;
+    y2=y1+h;
+  }
+
   draw();
 });
 
@@ -157,16 +184,15 @@ canvas.addEventListener("pointerup",()=>mode=null);
 async function procesarOCR(){
   if(!x2) return alert("Selecciona un área");
 
-  const btn=btnOCR;
-  btn.disabled=true;
-  btn.classList.add("loading");
+  btnOCR.disabled=true;
+  btnOCR.classList.add("loading");
 
   progressBox.style.display="block";
   progressBar.style.width="0%";
   progressText.innerText="0%";
 
-  const x=Math.min(x1,x2),y=Math.min(y1,y2);
-  const w=Math.abs(x2-x1),h=Math.abs(y2-y1);
+  const x=Math.min(x1,x2), y=Math.min(y1,y2);
+  const w=Math.abs(x2-x1), h=Math.abs(y2-y1);
 
   const cut=document.createElement("canvas");
   cut.width=w; cut.height=h;
@@ -185,8 +211,8 @@ async function procesarOCR(){
 
   if(text.trim()) agregarFila(text.trim());
 
-  btn.disabled=false;
-  btn.classList.remove("loading");
+  btnOCR.disabled=false;
+  btnOCR.classList.remove("loading");
 }
 
 /* ================= TABLA ================= */
