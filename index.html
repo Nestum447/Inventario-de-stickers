@@ -214,13 +214,21 @@ canvas.addEventListener("pointermove",e=>{
 });
 canvas.addEventListener("pointerup",()=>mode=null);
 
-/* OCR */
+/* OCR CON PROGRESO */
 async function procesarOCR(){
   if(!x2) return alert("Selecciona un área");
 
   const btn=document.getElementById("btnOCR");
+  const progressBox=document.getElementById("progressBox");
+  const progressBar=document.getElementById("progressBar");
+  const progressText=document.getElementById("progressText");
+
   btn.disabled=true;
   btn.classList.add("loading");
+
+  progressBox.style.display="block";
+  progressBar.style.width="0%";
+  progressText.innerText="0%";
 
   const x=Math.min(x1,x2);
   const y=Math.min(y1,y2);
@@ -232,7 +240,19 @@ async function procesarOCR(){
   cut.height=h;
   cut.getContext("2d").drawImage(canvas,x,y,w,h,0,0,w,h);
 
-  const {data:{text}}=await Tesseract.recognize(cut,"spa+eng");
+  const {data:{text}} = await Tesseract.recognize(
+    cut,
+    "spa+eng",
+    {
+      logger:m=>{
+        if(m.status==="recognizing text"){
+          const p=Math.round(m.progress*100);
+          progressBar.style.width=p+"%";
+          progressText.innerText=p+"%";
+        }
+      }
+    }
+  );
 
   const limpio=text.replace(/\s+/g," ").trim();
   if(limpio) agregarFila(limpio);
