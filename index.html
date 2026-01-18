@@ -36,6 +36,22 @@ button.loading{
   margin:8px
 }
 
+/* CONTENEDOR CON SCROLL */
+#canvasContainer{
+  width:100%;
+  max-height:420px;
+  border:2px dashed #999;
+  overflow:auto;
+  background:#fff;
+  margin-top:10px;
+}
+
+canvas{
+  display:block;
+  touch-action:none;
+  transform-origin:0 0;
+}
+
 /* PROGRESO */
 #progressBox{
   width:100%;
@@ -73,18 +89,6 @@ th,td{
 }
 
 th{background:#e5e7eb}
-
-td.editing{
-  outline:2px solid #2563eb;
-  background:#eef2ff;
-}
-
-canvas{
-  width:100%;
-  border:2px dashed #999;
-  margin-top:10px;
-  touch-action:none;
-}
 </style>
 </head>
 
@@ -100,12 +104,13 @@ canvas{
 
 <div id="status">Dibuja, mueve o ajusta el cuadro</div>
 
-<canvas id="canvas"></canvas>
+<div id="canvasContainer">
+  <canvas id="canvas"></canvas>
+</div>
 
 <button id="btnOCR" class="export" onclick="procesarOCR()">🔍 Extraer texto</button>
 <button class="export" onclick="exportarExcel()">⬇️ Descargar Excel</button>
 
-<!-- BARRA DE PROGRESO DEBAJO DE DESCARGAR EXCEL -->
 <div id="progressBox">
   <div id="progressBar"></div>
 </div>
@@ -125,11 +130,17 @@ canvas{
 let canvas=document.getElementById("canvas");
 let ctx=canvas.getContext("2d");
 let img=new Image();
+let container=document.getElementById("canvasContainer");
 
 let x1=0,y1=0,x2=0,y2=0;
 let mode=null;
 let contador=1;
 const HANDLE=12;
+
+/* ZOOM */
+let scale=1;
+const MIN_ZOOM=0.5;
+const MAX_ZOOM=3;
 
 /* ======================
    CARGAR IMAGEN
@@ -141,10 +152,16 @@ function cargarImagen(input){
   const reader=new FileReader();
   reader.onload=e=>{
     img.onload=()=>{
-      const max=1200;
-      const s=Math.min(max/img.width,max/img.height,1);
-      canvas.width=img.width*s;
-      canvas.height=img.height*s;
+      canvas.width=img.width;
+      canvas.height=img.height;
+
+      scale=Math.min(
+        container.clientWidth/img.width,
+        400/img.height,
+        1
+      );
+
+      x1=y1=x2=y2=0;
       draw();
     };
     img.src=e.target.result;
@@ -156,11 +173,13 @@ function cargarImagen(input){
    DIBUJO
 ====================== */
 function draw(){
+  ctx.setTransform(scale,0,0,scale,0,0);
   ctx.clearRect(0,0,canvas.width,canvas.height);
-  ctx.drawImage(img,0,0,canvas.width,canvas.height);
+  ctx.drawImage(img,0,0);
+
   if(x2){
     ctx.strokeStyle="red";
-    ctx.lineWidth=2;
+    ctx.lineWidth=2/scale;
     ctx.strokeRect(x1,y1,x2-x1,y2-y1);
     drawHandles();
   }
@@ -170,7 +189,7 @@ function drawHandles(){
   ctx.fillStyle="red";
   [[x1,y1],[x2,y1],[x1,y2],[x2,y2]].forEach(p=>{
     ctx.beginPath();
-    ctx.arc(p[0],p[1],HANDLE/2,0,Math.PI*2);
+    ctx.arc(p[0],p[1],(HANDLE/2)/scale,0,Math.PI*2);
     ctx.fill();
   });
 }
@@ -180,11 +199,9 @@ function drawHandles(){
 ====================== */
 function getPos(e){
   const r=canvas.getBoundingClientRect();
-  const sx=canvas.width/r.width;
-  const sy=canvas.height/r.height;
-  return {
-    x:(e.clientX-r.left)*sx,
-    y:(e.clientY-r.top)*sy
+  return{
+    x:(e.clientX-r.left)/scale,
+    y:(e.clientY-r.top)/scale
   };
 }
 
@@ -224,8 +241,17 @@ canvas.addEventListener("pointermove",e=>{
 });
 canvas.addEventListener("pointerup",()=>mode=null);
 
+/* ZOOM CON RUEDA */
+canvas.addEventListener("wheel",e=>{
+  e.preventDefault();
+  const delta=e.deltaY<0?1.1:0.9;
+  scale*=delta;
+  scale=Math.min(Math.max(scale,MIN_ZOOM),MAX_ZOOM);
+  draw();
+},{passive:false});
+
 /* ======================
-   OCR CON PROGRESO %
+   OCR
 ====================== */
 async function procesarOCR(){
   if(!x2) return alert("Selecciona un área");
@@ -235,14 +261,8 @@ async function procesarOCR(){
   const progressBar=document.getElementById("progressBar");
   const progressText=document.getElementById("progressText");
 
-  btn.classList.add("loading");
   btn.disabled=true;
-
   progressBox.style.display="block";
-  progressBar.style.width="0%";
-  progressText.innerText="0%";
-
-  status.innerText="⏳ Extrayendo texto…";
 
   const x=Math.min(x1,x2);
   const y=Math.min(y1,y2);
@@ -254,29 +274,21 @@ async function procesarOCR(){
   cut.height=h;
   cut.getContext("2d").drawImage(canvas,x,y,w,h,0,0,w,h);
 
-  const {data:{text}} = await Tesseract.recognize(
-    cut,
-    "spa+eng",
-    {
-      tessedit_pageseg_mode:Tesseract.PSM.SINGLE_LINE,
-      logger:m=>{
-        if(m.status==="recognizing text"){
-          const p=Math.round(m.progress*100);
-          progressBar.style.width=p+"%";
-          progressText.innerText=p+"%";
-          status.innerText="🔍 OCR "+p+"%";
-        }
+  const {data:{text}}=await Tesseract.recognize(
+    cut,"spa+eng",
+    {logger:m=>{
+      if(m.status==="recognizing text"){
+        const p=Math.round(m.progress*100);
+        progressBar.style.width=p+"%";
+        progressText.innerText=p+"%";
       }
-    }
+    }}
   );
 
   const limpio=text.replace(/\s+/g," ").trim();
   if(limpio) agregarFila(limpio);
 
-  btn.classList.remove("loading");
   btn.disabled=false;
-
-  status.innerText="✅ Texto extraído";
 }
 
 /* ======================
@@ -305,4 +317,4 @@ function exportarExcel(){
 </script>
 
 </body>
-  </html>
+</html>
