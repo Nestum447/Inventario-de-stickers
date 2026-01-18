@@ -2,7 +2,7 @@
 <html lang="es">
 <head>
 <meta charset="UTF-8">
-<title>OCR Inventario PRO</title>
+<title>OCR Inventario PRO – Cámara en Vivo</title>
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
 
 <script src="https://cdn.jsdelivr.net/npm/tesseract.js@5/dist/tesseract.min.js"></script>
@@ -30,10 +30,25 @@ button.loading{
   cursor:not-allowed;
 }
 
-#status{
-  text-align:center;
-  font-size:14px;
-  margin:8px
+#status{text-align:center;font-size:14px;margin:8px}
+
+/* VIDEO + CANVAS */
+#contenedor{
+  position:relative;
+  width:100%;
+}
+
+video,canvas{
+  width:100%;
+  border-radius:8px;
+}
+
+canvas{
+  position:absolute;
+  top:0;
+  left:0;
+  border:2px dashed #999;
+  touch-action:none;
 }
 
 /* PROGRESO */
@@ -56,56 +71,36 @@ button.loading{
 #progressText{
   text-align:center;
   font-size:13px;
-  margin-top:4px;
   font-weight:bold;
+  margin-top:4px;
 }
 
-table{
-  width:100%;
-  border-collapse:collapse;
-  margin-top:10px
-}
-
-th,td{
-  border:1px solid #ccc;
-  padding:6px;
-  font-size:13px
-}
-
+/* TABLA */
+table{width:100%;border-collapse:collapse;margin-top:10px}
+th,td{border:1px solid #ccc;padding:6px;font-size:13px}
 th{background:#e5e7eb}
-
-td.editing{
-  outline:2px solid #2563eb;
-  background:#eef2ff;
-}
-
-canvas{
-  width:100%;
-  border:2px dashed #999;
-  margin-top:10px;
-  touch-action:none;
-}
 </style>
 </head>
 
 <body>
 
-<h2>📦 OCR Inventario PRO</h2>
+<h2>📦 OCR Inventario PRO (Cámara en vivo)</h2>
 
-<button class="primary" onclick="camara.click()">📷 Tomar foto</button>
+<button class="primary" onclick="iniciarCamara()">📷 Cámara en vivo</button>
 <button class="secondary" onclick="galeria.click()">🖼️ Cargar imagen</button>
 
-<input id="camara" type="file" accept="image/*" capture="environment" hidden onchange="cargarImagen(this)">
 <input id="galeria" type="file" accept="image/*" hidden onchange="cargarImagen(this)">
 
-<div id="status">Dibuja, mueve o ajusta el cuadro</div>
+<div id="status">Enciende la cámara y marca el área</div>
 
-<canvas id="canvas"></canvas>
+<div id="contenedor">
+  <video id="video" autoplay playsinline></video>
+  <canvas id="canvas"></canvas>
+</div>
 
 <button id="btnOCR" class="export" onclick="procesarOCR()">🔍 Extraer texto</button>
 <button class="export" onclick="exportarExcel()">⬇️ Descargar Excel</button>
 
-<!-- BARRA DE PROGRESO DEBAJO DE DESCARGAR EXCEL -->
 <div id="progressBox">
   <div id="progressBar"></div>
 </div>
@@ -113,23 +108,35 @@ canvas{
 
 <table id="tabla">
 <thead>
-<tr>
-<th>#</th>
-<th>Descripción</th>
-</tr>
+<tr><th>#</th><th>Descripción</th></tr>
 </thead>
 <tbody></tbody>
 </table>
 
 <script>
-let canvas=document.getElementById("canvas");
-let ctx=canvas.getContext("2d");
+const video=document.getElementById("video");
+const canvas=document.getElementById("canvas");
+const ctx=canvas.getContext("2d");
 let img=new Image();
 
-let x1=0,y1=0,x2=0,y2=0;
-let mode=null;
+let x1=0,y1=0,x2=0,y2=0,mode=null;
 let contador=1;
 const HANDLE=12;
+
+/* ======================
+   CÁMARA EN VIVO
+====================== */
+async function iniciarCamara(){
+  const stream=await navigator.mediaDevices.getUserMedia({
+    video:{facingMode:"environment"}
+  });
+  video.srcObject=stream;
+
+  setTimeout(()=>{
+    canvas.width=video.videoWidth;
+    canvas.height=video.videoHeight;
+  },500);
+}
 
 /* ======================
    CARGAR IMAGEN
@@ -137,15 +144,12 @@ const HANDLE=12;
 function cargarImagen(input){
   const file=input.files[0];
   if(!file) return;
-
   const reader=new FileReader();
   reader.onload=e=>{
     img.onload=()=>{
-      const max=1200;
-      const s=Math.min(max/img.width,max/img.height,1);
-      canvas.width=img.width*s;
-      canvas.height=img.height*s;
-      draw();
+      canvas.width=img.width;
+      canvas.height=img.height;
+      ctx.drawImage(img,0,0);
     };
     img.src=e.target.result;
   };
@@ -157,39 +161,27 @@ function cargarImagen(input){
 ====================== */
 function draw(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
-  ctx.drawImage(img,0,0,canvas.width,canvas.height);
+  if(video.srcObject){
+    ctx.drawImage(video,0,0,canvas.width,canvas.height);
+  }else{
+    ctx.drawImage(img,0,0);
+  }
   if(x2){
     ctx.strokeStyle="red";
     ctx.lineWidth=2;
     ctx.strokeRect(x1,y1,x2-x1,y2-y1);
-    drawHandles();
   }
 }
 
-function drawHandles(){
-  ctx.fillStyle="red";
-  [[x1,y1],[x2,y1],[x1,y2],[x2,y2]].forEach(p=>{
-    ctx.beginPath();
-    ctx.arc(p[0],p[1],HANDLE/2,0,Math.PI*2);
-    ctx.fill();
-  });
-}
-
 /* ======================
-   POSICIÓN REAL
+   POSICIÓN
 ====================== */
 function getPos(e){
   const r=canvas.getBoundingClientRect();
-  const sx=canvas.width/r.width;
-  const sy=canvas.height/r.height;
   return {
-    x:(e.clientX-r.left)*sx,
-    y:(e.clientY-r.top)*sy
+    x:(e.clientX-r.left)*(canvas.width/r.width),
+    y:(e.clientY-r.top)*(canvas.height/r.height)
   };
-}
-
-function hitHandle(px,py,hx,hy){
-  return Math.abs(px-hx)<HANDLE && Math.abs(py-hy)<HANDLE;
 }
 
 /* ======================
@@ -197,52 +189,37 @@ function hitHandle(px,py,hx,hy){
 ====================== */
 canvas.addEventListener("pointerdown",e=>{
   const p=getPos(e);
-  if(hitHandle(p.x,p.y,x1,y1)) mode="resize-tl";
-  else if(hitHandle(p.x,p.y,x2,y1)) mode="resize-tr";
-  else if(hitHandle(p.x,p.y,x1,y2)) mode="resize-bl";
-  else if(hitHandle(p.x,p.y,x2,y2)) mode="resize-br";
-  else if(p.x>x1 && p.x<x2 && p.y>y1 && p.y<y2) mode="move";
-  else{ mode="draw"; x1=p.x; y1=p.y; x2=p.x; y2=p.y; }
+  x1=p.x; y1=p.y; x2=p.x; y2=p.y;
+  mode="draw";
 });
 
 canvas.addEventListener("pointermove",e=>{
   if(!mode) return;
   const p=getPos(e);
-
-  if(mode==="draw"){ x2=p.x; y2=p.y; }
-  if(mode==="move"){
-    const w=x2-x1,h=y2-y1;
-    x1=p.x-w/2; y1=p.y-h/2;
-    x2=x1+w; y2=y1+h;
-  }
-  if(mode==="resize-tl"){ x1=p.x; y1=p.y; }
-  if(mode==="resize-tr"){ x2=p.x; y1=p.y; }
-  if(mode==="resize-bl"){ x1=p.x; y2=p.y; }
-  if(mode==="resize-br"){ x2=p.x; y2=p.y; }
-
+  x2=p.x; y2=p.y;
   draw();
 });
+
 canvas.addEventListener("pointerup",()=>mode=null);
 
 /* ======================
-   OCR CON PROGRESO %
+   OCR
 ====================== */
 async function procesarOCR(){
-  if(!x2) return alert("Selecciona un área");
+  if(!x2) return alert("Marca un área");
+
+  draw(); // captura frame actual
 
   const btn=document.getElementById("btnOCR");
-  const progressBox=document.getElementById("progressBox");
-  const progressBar=document.getElementById("progressBar");
-  const progressText=document.getElementById("progressText");
+  const pb=document.getElementById("progressBox");
+  const bar=document.getElementById("progressBar");
+  const txt=document.getElementById("progressText");
 
   btn.classList.add("loading");
   btn.disabled=true;
-
-  progressBox.style.display="block";
-  progressBar.style.width="0%";
-  progressText.innerText="0%";
-
-  status.innerText="⏳ Extrayendo texto…";
+  pb.style.display="block";
+  bar.style.width="0%";
+  txt.innerText="0%";
 
   const x=Math.min(x1,x2);
   const y=Math.min(y1,y2);
@@ -250,42 +227,34 @@ async function procesarOCR(){
   const h=Math.abs(y2-y1);
 
   const cut=document.createElement("canvas");
-  cut.width=w;
-  cut.height=h;
+  cut.width=w; cut.height=h;
   cut.getContext("2d").drawImage(canvas,x,y,w,h,0,0,w,h);
 
-  const {data:{text}} = await Tesseract.recognize(
-    cut,
-    "spa+eng",
+  const {data:{text}}=await Tesseract.recognize(
+    cut,"spa+eng",
     {
       tessedit_pageseg_mode:Tesseract.PSM.SINGLE_LINE,
       logger:m=>{
         if(m.status==="recognizing text"){
           const p=Math.round(m.progress*100);
-          progressBar.style.width=p+"%";
-          progressText.innerText=p+"%";
-          status.innerText="🔍 OCR "+p+"%";
+          bar.style.width=p+"%";
+          txt.innerText=p+"%";
+          status.innerText="OCR "+p+"%";
         }
       }
     }
   );
 
   const limpio=text.replace(/\s+/g," ").trim();
-  if(limpio) agregarFila(limpio);
+  if(limpio){
+    const tr=tabla.querySelector("tbody").insertRow();
+    tr.insertCell(0).innerText=contador++;
+    tr.insertCell(1).innerText=limpio;
+  }
 
   btn.classList.remove("loading");
   btn.disabled=false;
-
   status.innerText="✅ Texto extraído";
-}
-
-/* ======================
-   TABLA
-====================== */
-function agregarFila(texto){
-  const tr=tabla.querySelector("tbody").insertRow();
-  tr.insertCell(0).innerText=contador++;
-  tr.insertCell(1).innerText=texto;
 }
 
 /* ======================
@@ -296,7 +265,6 @@ function exportarExcel(){
   document.querySelectorAll("#tabla tbody tr").forEach(tr=>{
     filas.push([...tr.cells].map(td=>td.innerText));
   });
-
   const hoja=XLSX.utils.aoa_to_sheet(filas);
   const libro=XLSX.utils.book_new();
   XLSX.utils.book_append_sheet(libro,hoja,"Inventario");
