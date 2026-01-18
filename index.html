@@ -36,7 +36,6 @@ button.loading{
   margin:8px
 }
 
-/* PROGRESO */
 #progressBox{
   width:100%;
   background:#e5e7eb;
@@ -105,7 +104,6 @@ canvas{
 <button id="btnOCR" class="export" onclick="procesarOCR()">🔍 Extraer texto</button>
 <button class="export" onclick="exportarExcel()">⬇️ Descargar Excel</button>
 
-<!-- BARRA DE PROGRESO DEBAJO DE DESCARGAR EXCEL -->
 <div id="progressBox">
   <div id="progressBar"></div>
 </div>
@@ -131,9 +129,7 @@ let mode=null;
 let contador=1;
 const HANDLE=12;
 
-/* ======================
-   CARGAR IMAGEN
-====================== */
+/* CARGAR IMAGEN */
 function cargarImagen(input){
   const file=input.files[0];
   if(!file) return;
@@ -152,9 +148,7 @@ function cargarImagen(input){
   reader.readAsDataURL(file);
 }
 
-/* ======================
-   DIBUJO
-====================== */
+/* DIBUJO */
 function draw(){
   ctx.clearRect(0,0,canvas.width,canvas.height);
   ctx.drawImage(img,0,0,canvas.width,canvas.height);
@@ -175,9 +169,7 @@ function drawHandles(){
   });
 }
 
-/* ======================
-   POSICIÓN REAL
-====================== */
+/* POSICIÓN REAL */
 function getPos(e){
   const r=canvas.getBoundingClientRect();
   const sx=canvas.width/r.width;
@@ -192,9 +184,7 @@ function hitHandle(px,py,hx,hy){
   return Math.abs(px-hx)<HANDLE && Math.abs(py-hy)<HANDLE;
 }
 
-/* ======================
-   INTERACCIÓN
-====================== */
+/* INTERACCIÓN */
 canvas.addEventListener("pointerdown",e=>{
   const p=getPos(e);
   if(hitHandle(p.x,p.y,x1,y1)) mode="resize-tl";
@@ -224,25 +214,13 @@ canvas.addEventListener("pointermove",e=>{
 });
 canvas.addEventListener("pointerup",()=>mode=null);
 
-/* ======================
-   OCR CON PROGRESO %
-====================== */
+/* OCR */
 async function procesarOCR(){
   if(!x2) return alert("Selecciona un área");
 
   const btn=document.getElementById("btnOCR");
-  const progressBox=document.getElementById("progressBox");
-  const progressBar=document.getElementById("progressBar");
-  const progressText=document.getElementById("progressText");
-
-  btn.classList.add("loading");
   btn.disabled=true;
-
-  progressBox.style.display="block";
-  progressBar.style.width="0%";
-  progressText.innerText="0%";
-
-  status.innerText="⏳ Extrayendo texto…";
+  btn.classList.add("loading");
 
   const x=Math.min(x1,x2);
   const y=Math.min(y1,y2);
@@ -254,43 +232,59 @@ async function procesarOCR(){
   cut.height=h;
   cut.getContext("2d").drawImage(canvas,x,y,w,h,0,0,w,h);
 
-  const {data:{text}} = await Tesseract.recognize(
-    cut,
-    "spa+eng",
-    {
-      tessedit_pageseg_mode:Tesseract.PSM.SINGLE_LINE,
-      logger:m=>{
-        if(m.status==="recognizing text"){
-          const p=Math.round(m.progress*100);
-          progressBar.style.width=p+"%";
-          progressText.innerText=p+"%";
-          status.innerText="🔍 OCR "+p+"%";
-        }
-      }
-    }
-  );
+  const {data:{text}}=await Tesseract.recognize(cut,"spa+eng");
 
   const limpio=text.replace(/\s+/g," ").trim();
   if(limpio) agregarFila(limpio);
 
-  btn.classList.remove("loading");
   btn.disabled=false;
-
-  status.innerText="✅ Texto extraído";
+  btn.classList.remove("loading");
 }
 
-/* ======================
-   TABLA
-====================== */
+/* TABLA */
 function agregarFila(texto){
   const tr=tabla.querySelector("tbody").insertRow();
   tr.insertCell(0).innerText=contador++;
   tr.insertCell(1).innerText=texto;
 }
 
-/* ======================
-   EXCEL
-====================== */
+/* EDICIÓN DOBLE CLICK */
+document.getElementById("tabla").addEventListener("dblclick",e=>{
+  const td=e.target;
+  if(td.tagName!=="TD" || td.cellIndex===0) return;
+
+  if(td.classList.contains("editing")) return;
+
+  td.classList.add("editing");
+  const original=td.innerText;
+
+  const input=document.createElement("input");
+  input.type="text";
+  input.value=original;
+  input.style.width="100%";
+  input.style.border="none";
+  input.style.outline="none";
+
+  td.innerText="";
+  td.appendChild(input);
+  input.focus();
+
+  const guardar=()=>{
+    td.innerText=input.value.trim()||original;
+    td.classList.remove("editing");
+  };
+
+  input.addEventListener("blur",guardar);
+  input.addEventListener("keydown",ev=>{
+    if(ev.key==="Enter") guardar();
+    if(ev.key==="Escape"){
+      td.innerText=original;
+      td.classList.remove("editing");
+    }
+  });
+});
+
+/* EXCEL */
 function exportarExcel(){
   const filas=[["#","Descripción"]];
   document.querySelectorAll("#tabla tbody tr").forEach(tr=>{
@@ -305,4 +299,4 @@ function exportarExcel(){
 </script>
 
 </body>
-  </html>
+</html>
