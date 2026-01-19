@@ -106,6 +106,24 @@ let mode=null;
 let offsetX=0,offsetY=0;
 let contador=1;
 
+const STORAGE_KEY="inventario_ocr_registros";
+
+/* ============ PERSISTENCIA ============ */
+function guardarTabla(){
+  const data=[];
+  document.querySelectorAll("#tabla tbody tr").forEach(tr=>{
+    data.push(tr.cells[1].innerText);
+  });
+  localStorage.setItem(STORAGE_KEY,JSON.stringify(data));
+}
+
+function cargarTabla(){
+  const data=JSON.parse(localStorage.getItem(STORAGE_KEY)||"[]");
+  data.forEach(txt=>agregarFila(txt,false));
+}
+
+window.addEventListener("load",cargarTabla);
+
 /* ================= CARGAR IMAGEN ================= */
 function cargarImagen(input){
   const file=input.files[0];
@@ -209,14 +227,14 @@ async function procesarOCR(){
     }}
   );
 
-  if(text.trim()) agregarFila(text.trim());
+  if(text.trim()) agregarFila(text.trim(),true);
 
   btnOCR.disabled=false;
   btnOCR.classList.remove("loading");
 }
 
 /* ================= TABLA ================= */
-function agregarFila(texto){
+function agregarFila(texto,guardar=true){
   const tr=tabla.querySelector("tbody").insertRow();
   tr.insertCell(0).innerText=contador++;
   tr.insertCell(1).innerText=texto;
@@ -229,9 +247,12 @@ function agregarFila(texto){
     if(confirm("¿Eliminar esta fila?")){
       tr.remove();
       renumerar();
+      guardarTabla();
     }
   };
   td.appendChild(b);
+
+  if(guardar) guardarTabla();
 }
 
 function renumerar(){
@@ -250,7 +271,10 @@ tabla.addEventListener("dblclick",e=>{
   const input=td.firstChild;
   input.focus();
 
-  input.onblur=()=>td.innerText=input.value||txt;
+  input.onblur=()=>{
+    td.innerText=input.value||txt;
+    guardarTabla();
+  };
   input.onkeydown=e=>{
     if(e.key==="Enter") input.blur();
     if(e.key==="Escape") td.innerText=txt;
